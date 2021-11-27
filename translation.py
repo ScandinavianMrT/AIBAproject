@@ -7,9 +7,8 @@ import numpy as np
 from googletrans import Translator
 from rouge import Rouge
 from sklearn.model_selection import train_test_split
-import json
 
-#%% Define functions
+#%% Define functions to call API
 
 def translate(call):
     openai.api_key = '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'
@@ -47,6 +46,8 @@ def translate_tuned(call):
     print(content)
     return response.choices[0].text
 
+# Preprocess and metric functions
+
 def remove_punc(corpus):
     texts = []
     key = str.maketrans('', '', string.punctuation.replace("'", "").replace('"', ''))
@@ -62,7 +63,7 @@ def BLEU(refs, candidates):
 
     return np.mean(scores)     
 
-#%% import dataset and preprocess
+#%% import dataset, preprocess and perform train/test split
 #https://www.kaggle.com/harishreddy18/english-to-french
 
 df_eng = pd.read_csv('data/small_vocab_en.csv', sep='delimiter', header = None)
@@ -73,7 +74,14 @@ df = pd.DataFrame({"English":sentences_eng,"French": sentences_fr})
 X_train, X_test, y_train, y_test = train_test_split(df["English"], df["French"], test_size=0.25, random_state=42)
 tune_set_trans = pd.DataFrame({"English": X_train, "French": y_train}).to_excel("fine_tune_trans.xlsx")
 
+
+#Number of samples to include in API call
+
 n = 100
+#%% 
+
+new_trans_preds = pd.read_csv('data/translate_translations.csv', sep=';', header = None)
+new_ggl_trans_pred = list(new_trans_preds.iloc[:,0])
 
 #%% Get GPT-3 predictions
 
@@ -98,7 +106,7 @@ for sentence in X_test[0:n]:
     pred = translator.translate(sentence, dest = "fr").text
     ggl_pred.append(pred)
 
-#%% Get BLEU-scores for both apps
+#%% Get BLEU-scores for both APIs
 
 refs = [sentence.split() for sentence in remove_punc(y_test[0:n])]
 gpt_candidates = [sentence.split() for sentence in gpt_trans_pred]
@@ -109,7 +117,14 @@ gpt_bleu_trans = BLEU(refs, gpt_candidates)
 gpt_bleu_trans_tuned = BLEU(refs, gpt_candidates_tuned)
 ggl_bleu_trans = BLEU(refs, ggl_candidates)
 
-#%%
+#%% Compute metrics
+
 gpt_rouge_trans = Rouge().get_scores(gpt_trans_pred, list(y_test[0:n]), avg=True).get("rouge-2").get("f")
 gpt_rouge_trans_tuned = Rouge().get_scores(gpt_trans_pred_tuned, list(y_test[0:n]), avg=True).get("rouge-2").get("f")
 ggl_rouge_trans = Rouge().get_scores(ggl_pred, list(y_test[0:n]), avg=True).get("rouge-2").get("f")
+
+refs = [sentence.split() for sentence in remove_punc(y_test[0:n])]
+ggl_candidates = [sentence.split() for sentence in new_ggl_trans_pred]
+ggl_bleu_trans = BLEU(refs, ggl_candidates)
+ggl_rouge_trans = Rouge().get_scores(new_ggl_trans_pred, list(y_test[0:n]), avg=True).get("rouge-2").get("f")
+
